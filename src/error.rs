@@ -5,7 +5,7 @@ use std::{error::Error, fmt};
 /// https://docs.microsoft.com/en-us/windows/win32/seccrypto/common-hresult-values
 #[derive(Debug)]
 pub enum WinError {
-    InvalidArg,
+    InvalidArg(String),
     OutOfMemory,
     Unexpected,
     Abort,
@@ -14,14 +14,14 @@ pub enum WinError {
     Handle,
     NoInterface,
     NotImpl,
-    Pointer,
+    Pointer(String),
 }
 
 impl fmt::Display for WinError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            WinError::InvalidArg => {
-                write!(f, "One or more arguments are not valid")
+            WinError::InvalidArg(description) => {
+                write!(f, "One or more arguments are not valid: {}", description)
             }
             WinError::OutOfMemory => {
                 write!(f, "Failed to allocate necessary memory")
@@ -47,8 +47,8 @@ impl fmt::Display for WinError {
             WinError::NotImpl => {
                 write!(f, "Not implemented")
             }
-            WinError::Pointer => {
-                write!(f, "Pointer that is not valid")
+            WinError::Pointer(description) => {
+                write!(f, "Pointer that is not valid: {}", description)
             }
         }
     }

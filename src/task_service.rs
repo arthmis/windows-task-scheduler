@@ -7,23 +7,27 @@ use winapi::{
     um::{
         combaseapi::CoCreateInstance,
         oaidl::VARIANT,
-        taskschd::{ITaskFolder, ITaskService, TaskScheduler},
+        taskschd::{ITaskDefinition, ITaskFolder, ITaskService, TaskScheduler},
     },
     Class, Interface,
 };
 
-use crate::{com::ComError, error::WinError, to_win_str};
+use crate::{com::ComError, error::WinError, task::Task, task_folder::TaskFolder, to_win_str};
 
 // pub struct TaskService<'a> {
 //     task_service: &'a mut ITaskService,
 // }
 pub(crate) struct TaskService<'a> {
-    task_service: &'a mut ITaskService,
+    pub(crate) task_service: &'a mut ITaskService,
 }
 
 impl<'a> TaskService<'a> {
-    pub fn new() -> Result<Self, TaskServiceError> {
+    pub(crate) fn new() -> Result<Self, TaskServiceError> {
         unsafe {
+            // Create an instance of the task service
+            // this isn't properly documented, however these are pointers to GUIDs for these particular
+            // classes. winapi has uuidof method to get the guid
+            // I figured it out because of this https://docs.microsoft.com/en-us/archive/msdn-magazine/2007/october/windows-with-c-task-scheduler-2-0
             let CLSID_TaskScheduler = Box::into_raw(Box::new(TaskScheduler::uuidof()));
             let IID_ITaskService = Box::into_raw(Box::new(ITaskService::uuidof()));
             let mut task_service: *mut ITaskService = core::ptr::null_mut();
@@ -46,7 +50,11 @@ impl<'a> TaskService<'a> {
                         return Err(TaskServiceError::ComError(ComError::ClassNoAggregation))
                     }
                     E_NOINTERFACE => return Err(TaskServiceError::ComError(ComError::NoInterface)),
-                    E_POINTER => return Err(TaskServiceError::WinError(WinError::Pointer)),
+                    E_POINTER => {
+                        return Err(TaskServiceError::WinError(WinError::Pointer(
+                            "The ppv parameter is NULL".to_string(),
+                        )))
+                    }
                 }
             }
             let task_service = Self {
@@ -97,7 +105,12 @@ impl<'a> TaskService<'a> {
         Ok(())
     }
 
-    fn get_folder(&self) {
+    /// This doesn't really specify what errors can be returned
+    /// The path to the folder to retrieve. Do not use a backslash following the last folder name in the path. The root task folder is specified with a backslash (). An example of a task folder path, under the root task folder, is \MyTaskFolder. The '.' character cannot be used to specify the current task folder and the '..' characters cannot be used to specify the parent task folder in the path.
+    ///
+    /// https://docs.microsoft.com/en-us/windows/win32/api/taskschd/nf-taskschd-itaskservice-getfolder
+    // I'll have to figure what do with it in the future
+    pub(crate) fn get_folder(&self) -> Result<TaskFolder, String> {
         unsafe {
             // get the pointer to the root task folder. This folder will hold the
             // new task that is registered
@@ -107,12 +120,21 @@ impl<'a> TaskService<'a> {
                 &mut root_task_folder as *mut *mut ITaskFolder,
             );
             if FAILED(hr) {
-                println!("Cannot get root folder pointer: {:X}", hr);
-                self.task_service.Release();
-                return;
+                error!("Cannot get root folder pointer: {:X}", hr);
+                // eprintln!("Cannot get root folder pointer: {:X}", hr);
+                return Err(format!("Cannot get root folder pointer: {:X}", hr));
+                // self.task_service.Release();
             }
-            let root_task_folder = root_task_folder.as_mut().unwrap();
+            // let root_task_folder = root_task_folder.as_mut().unwrap();
+            // let root_task_folder = root_task_folder;
+            Ok(TaskFolder::new(root_task_folder))
         }
+    }
+
+    /// Returns an empty task definition object to be filled in with settings
+    // and properties and then registered using TaskFolder::register_task_definition
+    pub(crate) fn new_task(&self) -> Result<Task, WinError> {
+        Task::new(self)
     }
 }
 
@@ -123,6 +145,7 @@ impl<'a> Drop for TaskService<'a> {
         }
     }
 }
+#[derive(Debug)]
 pub enum TaskServiceError {
     /// Access is denied to connect to the Task Scheduler service.
     AccessDenied,
