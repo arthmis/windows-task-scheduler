@@ -10,8 +10,9 @@ use winapi::{
     um::{
         oaidl::VARIANT,
         taskschd::{
-            IIdleSettings, IPrincipal, IRegistrationInfo, ITaskDefinition, ITaskFolder,
-            ITaskSettings, ITimeTrigger, ITrigger, ITriggerCollection,
+            IAction, IActionCollection, IExecAction, IIdleSettings, IPrincipal, IRegisteredTask,
+            IRegistrationInfo, ITaskDefinition, ITaskFolder, ITaskSettings, ITimeTrigger, ITrigger,
+            ITriggerCollection, TASK_ACTION_EXEC, TASK_CREATE_OR_UPDATE,
             TASK_LOGON_INTERACTIVE_TOKEN, TASK_TRIGGER_TIME,
         },
     },
@@ -65,7 +66,7 @@ fn main() {
         // name for task
         let mut task_name = to_win_str("Trigger Notepad");
         // path for notepad program
-        let exe_path = to_win_str("C:\\Windows\\System32\\notepad.exe");
+        let mut exe_path = to_win_str("C:\\Windows\\System32\\notepad.exe");
 
         // Create an instance of the task service
         // this isn't properly documented, however these are pointers to GUIDs for these particular
@@ -270,7 +271,7 @@ fn main() {
             println!("Cannot put trigger ID: {:X}", hr);
         }
 
-        hr = time_trigger.put_EndBoundary(to_win_str("2015-05-02T08:00:00").as_mut_ptr());
+        hr = time_trigger.put_EndBoundary(to_win_str("2021-01-01T10:18:00").as_mut_ptr());
         if FAILED(hr) {
             println!("Cannot put end boundary on trigger: {:X}", hr);
         }
@@ -279,7 +280,7 @@ fn main() {
         //  format should be YYYY-MM-DDTHH:MM:SS(+-)(timezone).
         //  For example, the start boundary below
         //  is January 1st 2005 at 12:05
-        hr = time_trigger.put_StartBoundary(to_win_str("2005-01-01T12:05:00").as_mut_ptr());
+        hr = time_trigger.put_StartBoundary(to_win_str("2021-01-01T10:17:00").as_mut_ptr());
         time_trigger.Release();
         if FAILED(hr) {
             println!("Cannot add start boundary to trigger: {:x}", hr);
@@ -288,5 +289,81 @@ fn main() {
             CoUninitialize();
             return;
         }
+
+        // Add an action to the task. This task will execute notepad.exe
+        let mut action_collection: *mut IActionCollection = ptr::null_mut();
+        hr = task.get_Actions(&mut action_collection as *mut *mut IActionCollection);
+        if FAILED(hr) {
+            println!("Cannot get Task collection pointer: {:X}", hr);
+            root_task_folder.Release();
+            task.Release();
+            CoUninitialize();
+            return;
+        }
+        let action_collection = &mut *action_collection;
+
+        // create the action, specifying that it is an executable
+        let mut action: *mut IAction = ptr::null_mut();
+        action_collection.Create(TASK_ACTION_EXEC, &mut action as *mut *mut IAction);
+        action_collection.Release();
+        if FAILED(hr) {
+            println!("Cannot create the action: {:X}", hr);
+            root_task_folder.Release();
+            task.Release();
+            CoUninitialize();
+            return;
+        }
+        let action = &mut *action;
+
+        let mut exec_action: *mut IExecAction = ptr::null_mut();
+        // Query Interface for the executable task pointer
+        hr = action.QueryInterface(
+            Box::into_raw(Box::new(IExecAction::uuidof())),
+            &mut exec_action as *mut *mut IExecAction as *mut *mut c_void,
+        );
+        if FAILED(hr) {
+            println!("Cannot put action path: {:X}", hr);
+            root_task_folder.Release();
+            task.Release();
+            CoUninitialize();
+            return;
+        }
+        let exec_action = &mut *exec_action;
+
+        // Set the path of the executable to notepad.exe
+        hr = exec_action.put_Path(exe_path.as_mut_ptr());
+        exec_action.Release();
+        if FAILED(hr) {
+            println!("Cannot put action path: {:X}", hr);
+        }
+
+        // Save the task in the root folder
+        let mut registered_task: *mut IRegisteredTask = ptr::null_mut();
+        hr = root_task_folder.RegisterTaskDefinition(
+            task_name.as_mut_ptr(),
+            task,
+            TASK_CREATE_OR_UPDATE as i32,
+            variant,
+            variant,
+            TASK_LOGON_INTERACTIVE_TOKEN,
+            // this was supposed to be _variant_t(L"") in C++
+            variant,
+            registered_task as *mut *mut IRegisteredTask,
+        );
+        if FAILED(hr) {
+            println!("Error saving the Task: {:X}", hr);
+            root_task_folder.Release();
+            task.Release();
+            CoUninitialize();
+            return;
+        }
+
+        println!("Success! Task successfully registered");
+
+        // Clean up
+        root_task_folder.Release();
+        task.Release();
+        registered_task.as_mut().unwrap().Release();
+        CoUninitialize();
     }
 }
