@@ -99,7 +99,6 @@ impl<'a> TaskService<'a> {
                         return Err(TaskServiceError::WinError(WinError::OutOfMemory))
                     }
                 }
-                // self.task_service.Release();
             }
         }
         Ok(())
@@ -111,24 +110,7 @@ impl<'a> TaskService<'a> {
     /// https://docs.microsoft.com/en-us/windows/win32/api/taskschd/nf-taskschd-itaskservice-getfolder
     // I'll have to figure what do with it in the future
     pub(crate) fn get_folder(&self) -> Result<TaskFolder, String> {
-        unsafe {
-            // get the pointer to the root task folder. This folder will hold the
-            // new task that is registered
-            let mut root_task_folder: *mut ITaskFolder = core::ptr::null_mut();
-            let hr = self.task_service.GetFolder(
-                to_win_str("\\").as_mut_ptr(),
-                &mut root_task_folder as *mut *mut ITaskFolder,
-            );
-            if FAILED(hr) {
-                error!("Cannot get root folder pointer: {:X}", hr);
-                // eprintln!("Cannot get root folder pointer: {:X}", hr);
-                return Err(format!("Cannot get root folder pointer: {:X}", hr));
-                // self.task_service.Release();
-            }
-            // let root_task_folder = root_task_folder.as_mut().unwrap();
-            // let root_task_folder = root_task_folder;
-            Ok(TaskFolder::new(root_task_folder))
-        }
+        TaskFolder::new(self)
     }
 
     /// Returns an empty task definition object to be filled in with settings

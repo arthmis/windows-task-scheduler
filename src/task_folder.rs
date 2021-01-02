@@ -1,29 +1,34 @@
 use log::error;
 use winapi::{shared::winerror::FAILED, um::taskschd::ITaskFolder};
 
-use crate::to_win_str;
+use crate::{task_service::TaskService, to_win_str};
 
 pub(crate) struct TaskFolder<'a> {
     pub(crate) task_folder: &'a mut ITaskFolder,
 }
 
 impl<'a> TaskFolder<'a> {
-    /// This should only be used with TaskService::get_folder()
-    pub(crate) unsafe fn new(folder: *mut ITaskFolder) -> Self {
-        // get the pointer to the root task folder. This folder will hold the
-        // new task that is registered
-        // let mut root_task_folder: *mut ITaskFolder = core::ptr::null_mut();
-        // let hr = task_service.GetFolder(
-        //     to_win_str("\\").as_mut_ptr(),
-        //     &mut root_task_folder as *mut *mut ITaskFolder,
-        // );
-        // if FAILED(hr) {
-        //     println!("Cannot get root folder pointer: {:X}", hr);
-        //     task_service.Release();
-        //     return;
-        // }
-        let task_folder = folder.as_mut().unwrap();
-        Self { task_folder }
+    /// Gets a folder of registered tasks
+    ///
+    /// https://docs.microsoft.com/en-us/windows/win32/api/taskschd/nf-taskschd-itaskservice-getfolder
+    pub(crate) fn new(task_service: &TaskService) -> Result<Self, String> {
+        unsafe {
+            // get the pointer to the root task folder. This folder will hold the
+            // new task that is registered
+            let mut root_task_folder: *mut ITaskFolder = core::ptr::null_mut();
+            // have to pass in a reference to null ITaskFolder interface pointer
+            let hr = task_service.task_service.GetFolder(
+                to_win_str("\\").as_mut_ptr(),
+                &mut root_task_folder as *mut *mut ITaskFolder,
+            );
+            if FAILED(hr) {
+                error!("Cannot get root folder pointer: {:X}", hr);
+                return Err(format!("Cannot get root folder pointer: {:X}", hr));
+            }
+            Ok(Self {
+                task_folder: &mut *root_task_folder,
+            })
+        }
     }
     /// Deletes a task from the folder
     ///

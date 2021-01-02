@@ -44,7 +44,7 @@ fn main() {
     task_scheduler::schedule_task(
         task_name,
         &task_path,
-        now + Duration::seconds(15),
+        now + Duration::seconds(2),
         now + Duration::minutes(1),
     );
 }
