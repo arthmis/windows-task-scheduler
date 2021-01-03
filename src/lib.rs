@@ -7,6 +7,7 @@ use principal::TaskLogon;
 use std::ffi::OsStr;
 use std::{error::Error, fmt, path::Path, ptr, unreachable};
 use std::{iter, os::windows::ffi::OsStrExt};
+use trigger_collection::{TaskTriggerType, TriggerCollection};
 use winapi::{
     ctypes::c_void,
     shared::{winerror::FAILED, wtypesbase::CLSCTX_INPROC_SERVER},
@@ -30,12 +31,15 @@ use winapi::{
 
 mod com;
 mod error;
+mod idle_settings;
 mod principal;
 mod registration_info;
 mod task;
 mod task_folder;
 mod task_service;
 mod task_settings;
+mod trigger;
+mod trigger_collection;
 
 /// Re-exported from chrono for convenience
 pub use chrono::DateTime;
@@ -98,59 +102,21 @@ pub fn schedule_task(
     let settings = task.get_settings();
     settings.put_start_when_available(VARIANT_TRUE);
 
+    // set the idle settings for the task
+    let idle_settings = settings.get_idle_settings().unwrap();
+    idle_settings.put_wait_timeout(Duration::minutes(5));
+
+    let trigger_collection = TriggerCollection::new(&task).unwrap();
+    let trigger = trigger_collection
+        .create(TaskTriggerType::TaskTriggerTime)
+        .unwrap();
+
     unsafe {
-        // set the idle settings for the task
-        let mut idle_settings: *mut IIdleSettings = ptr::null_mut();
-        let mut hr = settings
-            .settings
-            .get_IdleSettings(&mut idle_settings as *mut *mut IIdleSettings);
-        if FAILED(hr) {
-            println!("Cannot get idle setting information: {:X}", hr);
-            // root_task_folder.Release();
-            // task.Release();
-            return;
-        }
-        let idle_settings = idle_settings.as_mut().unwrap();
-
-        idle_settings.put_WaitTimeout(to_win_str("PT5M").as_mut_ptr());
-        idle_settings.Release();
-        if FAILED(hr) {
-            println!("Cannot put idle setting information: {:X}", hr);
-            // root_task_folder.Release();
-            // task.Release();
-            return;
-        }
-
-        // get the trigger collection to insert the time trigger
-        let mut trigger_collection: *mut ITriggerCollection = ptr::null_mut();
-        hr = task
-            .task
-            .get_Triggers(&mut trigger_collection as *mut *mut ITriggerCollection);
-        if FAILED(hr) {
-            println!("Cannot get trigger collection: {:X}", hr);
-            // root_task_folder.Release();
-            // task.Release();
-            return;
-        }
-        let trigger_collection = trigger_collection.as_mut().unwrap();
-
-        // add the time trigger to the task
-        let mut trigger: *mut ITrigger = ptr::null_mut();
-        hr = trigger_collection.Create(TASK_TRIGGER_TIME, &mut trigger as *mut *mut ITrigger);
-        if FAILED(hr) {
-            println!("Cannot create trigger: {:X}", hr);
-            // root_task_folder.Release();
-            // task.Release();
-            return;
-        }
-        let trigger = trigger.as_mut().unwrap();
-
         let mut time_trigger: *mut ITimeTrigger = ptr::null_mut();
-        hr = trigger.QueryInterface(
+        let mut hr = trigger.trigger.QueryInterface(
             Box::into_raw(Box::new(ITimeTrigger::uuidof())),
             &mut time_trigger as *mut *mut ITimeTrigger as *mut *mut c_void,
         );
-        trigger.Release();
         if FAILED(hr) {
             println!("QueryInterface call failed for ITimeTrigger: {:X}", hr);
             // root_task_folder.Release();

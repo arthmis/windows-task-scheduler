@@ -5,7 +5,7 @@ use winapi::{shared::winerror::FAILED, um::taskschd::ITaskDefinition};
 
 use crate::{
     error::WinError, principal::Principal, registration_info::RegistrationInfo,
-    task_service::TaskService, task_settings::TaskSettings,
+    task_service::TaskService, task_settings::TaskSettings, trigger_collection::TriggerCollection,
 };
 
 pub(crate) struct Task<'a> {
@@ -59,6 +59,13 @@ impl<'a> Task<'a> {
     /// https://docs.microsoft.com/en-us/windows/win32/api/taskschd/nf-taskschd-itaskdefinition-get_settings
     pub(crate) fn get_settings(&self) -> TaskSettings {
         TaskSettings::new(self)
+    }
+
+    /// Gets or sets a collection of triggers used to start a task.
+    ///
+    /// https://docs.microsoft.com/en-us/windows/win32/api/taskschd/nf-taskschd-itaskdefinition-get_triggers
+    pub(crate) fn get_triggers(&self) -> Result<TriggerCollection, WinError> {
+        TriggerCollection::new(self)
     }
 }
 

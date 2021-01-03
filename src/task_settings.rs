@@ -9,7 +9,9 @@ use winapi::{
     um::taskschd::ITaskSettings,
 };
 
-use crate::task::Task;
+use crate::{
+    error::WinError, idle_settings::IdleSettings, task::Task, trigger_collection::TriggerCollection,
+};
 
 /// Provides the settings that the Task Scheduler service uses to perform the task.
 pub(crate) struct TaskSettings<'a> {
@@ -49,6 +51,13 @@ impl<'a> TaskSettings<'a> {
                 unreachable!();
             }
         }
+    }
+
+    /// Gets or sets the information that specifies how the Task Scheduler performs tasks when the computer is in an idle condition. For information about idle conditions, see Task Idle Conditions.
+    ///
+    /// https://docs.microsoft.com/en-us/windows/win32/api/taskschd/nf-taskschd-itasksettings-get_idlesettings
+    pub(crate) fn get_idle_settings(&self) -> Result<IdleSettings, WinError> {
+        IdleSettings::new(self)
     }
 }
 

@@ -15,6 +15,7 @@ pub enum WinError {
     NoInterface,
     NotImpl,
     Pointer(String),
+    UnknownError(String),
 }
 
 impl fmt::Display for WinError {
@@ -49,6 +50,9 @@ impl fmt::Display for WinError {
             }
             WinError::Pointer(description) => {
                 write!(f, "Pointer that is not valid: {}", description)
+            }
+            WinError::UnknownError(description) => {
+                write!(f, "{}", description)
             }
         }
     }
