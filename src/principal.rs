@@ -6,7 +6,7 @@ use winapi::{
     um::taskschd::{IPrincipal, TASK_LOGON_INTERACTIVE_TOKEN},
 };
 
-use crate::task::Task;
+use crate::task::TaskDefinition;
 
 /// Provides the security credentials for a principal. These security credentials define the security context for the tasks that are associated with the principal.
 ///
@@ -17,7 +17,7 @@ pub(crate) struct Principal<'a> {
 
 impl<'a> Principal<'a> {
     /// Gets the principal for the task that provides the security credentials for the task.
-    pub(crate) fn new(task: &Task) -> Self {
+    pub(crate) fn new(task: &TaskDefinition) -> Self {
         unsafe {
             // Create the principal for the task - these credentials are
             // overwritten with the credentials passed to RegisterTaskDefinitio1n

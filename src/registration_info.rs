@@ -3,7 +3,7 @@ use std::unreachable;
 use log::error;
 use winapi::{shared::winerror::FAILED, um::taskschd::IRegistrationInfo};
 
-use crate::{task::Task, to_win_str};
+use crate::{task::TaskDefinition, to_win_str};
 
 // This could be a trait, since it's supposed to be an interface and
 // not actually a type
@@ -19,7 +19,7 @@ impl<'a> RegistrationInfo<'a> {
     /// This property is read/write
     ///
     /// https://docs.microsoft.com/en-us/windows/win32/api/taskschd/nf-taskschd-itaskdefinition-get_registrationinfo
-    pub(crate) fn new(task: &Task) -> Self {
+    pub(crate) fn new(task: &TaskDefinition) -> Self {
         unsafe {
             // Get the registration info for setting the identification
             let mut registration_info: *mut IRegistrationInfo = core::ptr::null_mut();

@@ -12,7 +12,9 @@ use winapi::{
     Class, Interface,
 };
 
-use crate::{com::ComError, error::WinError, task::Task, task_folder::TaskFolder, to_win_str};
+use crate::{
+    com::ComError, error::WinError, task::TaskDefinition, task_folder::TaskFolder, to_win_str,
+};
 
 // pub struct TaskService<'a> {
 //     task_service: &'a mut ITaskService,
@@ -115,8 +117,8 @@ impl<'a> TaskService<'a> {
 
     /// Returns an empty task definition object to be filled in with settings
     // and properties and then registered using TaskFolder::register_task_definition
-    pub(crate) fn new_task(&self) -> Result<Task, WinError> {
-        Task::new(self)
+    pub(crate) fn new_task(&self) -> Result<TaskDefinition, WinError> {
+        TaskDefinition::new(self)
     }
 }
 

@@ -8,11 +8,11 @@ use crate::{
     task_service::TaskService, task_settings::TaskSettings, trigger_collection::TriggerCollection,
 };
 
-pub(crate) struct Task<'a> {
+pub(crate) struct TaskDefinition<'a> {
     pub(crate) task: &'a mut ITaskDefinition,
 }
 
-impl<'a> Task<'a> {
+impl<'a> TaskDefinition<'a> {
     /// Create a new task definition
     pub(crate) fn new(task_service: &TaskService) -> Result<Self, WinError> {
         unsafe {
@@ -69,13 +69,13 @@ impl<'a> Task<'a> {
     }
 }
 
-impl<'a> Task<'a> {
+impl<'a> TaskDefinition<'a> {
     pub(crate) unsafe fn as_ptr(&self) -> *const ITaskDefinition {
         self.task as *const ITaskDefinition
     }
 }
 
-impl<'a> Drop for Task<'a> {
+impl<'a> Drop for TaskDefinition<'a> {
     fn drop(&mut self) {
         unsafe {
             self.task.Release();

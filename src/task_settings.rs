@@ -10,7 +10,8 @@ use winapi::{
 };
 
 use crate::{
-    error::WinError, idle_settings::IdleSettings, task::Task, trigger_collection::TriggerCollection,
+    error::WinError, idle_settings::IdleSettings, task::TaskDefinition,
+    trigger_collection::TriggerCollection,
 };
 
 /// Provides the settings that the Task Scheduler service uses to perform the task.
@@ -20,7 +21,7 @@ pub(crate) struct TaskSettings<'a> {
 
 impl<'a> TaskSettings<'a> {
     /// Creates TaskSettings to define settings for Task Scheduler.
-    pub(crate) fn new(task: &Task) -> Self {
+    pub(crate) fn new(task: &TaskDefinition) -> Self {
         unsafe {
             // create the settings for the task
             let mut settings: *mut ITaskSettings = ptr::null_mut();

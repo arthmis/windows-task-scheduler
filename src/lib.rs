@@ -1,12 +1,14 @@
 #![allow(warnings)]
 use combaseapi::CoCreateInstance;
 use core::default::Default;
+use error::WinError;
 use iter::once;
 use log::error;
 use principal::TaskLogon;
-use std::ffi::OsStr;
 use std::{error::Error, fmt, path::Path, ptr, unreachable};
+use std::{ffi::OsStr, path::PathBuf};
 use std::{iter, os::windows::ffi::OsStrExt};
+use trigger::TriggerInterface;
 use trigger_collection::{TaskTriggerType, TriggerCollection};
 use winapi::{
     ctypes::c_void,
@@ -38,6 +40,7 @@ mod task;
 mod task_folder;
 mod task_service;
 mod task_settings;
+mod time_trigger;
 mod trigger;
 mod trigger_collection;
 
@@ -48,7 +51,7 @@ pub use chrono::Duration;
 /// Re-exported from chrono for convenience
 pub use chrono::Utc;
 /// Small wrapper over some of the com base apis
-use com::Com;
+use com::{Com, ComError};
 /// Wrapper over ITaskService class
 use task_service::TaskService;
 
@@ -57,23 +60,37 @@ fn to_win_str(string: &str) -> Vec<u16> {
     OsStr::new(string).encode_wide().chain(once(0)).collect()
 }
 
+// pub struct Task {
+//     exe_path: PathBuf,
+//     task_name: String,
+//     triggers: TaskTriggers,
+// }
+
+// impl Task {
+pub enum TaskError {
+    WinError(WinError),
+    ComError(ComError),
+    Error(String),
+}
+
 /// Use this function to schedule a task
 /// For now the task will only be to start an executable
 /// If the start time is not after the time this function is called
 /// or the end time is before the start time then this function will fail
 /// The task name can be anything you want, but it cannot start with a "."
-pub fn schedule_task(
-    task_name: &str,
-    task_path: &Path,
-    start_time: DateTime<Utc>,
-    end_time: DateTime<Utc>,
-) {
+pub fn execute_task(
+    actions: Actions,
+    task_name: String,
+    triggers: TaskTriggers,
+) -> Result<(), TaskError> {
+    dbg!(&actions.0[0], &task_name);
     // validate that the task_path is not a folder and so on
     // validate that the end time is after the start times
+
     let _com = Com::initialize().unwrap();
 
     // path for notepad program
-    let mut exe_path = to_win_str(task_path.to_str().unwrap());
+    let mut exe_path = to_win_str(actions.0[0].to_str().unwrap());
 
     // Create an instance of the task service
     let task_service = TaskService::new().unwrap();
@@ -83,83 +100,65 @@ pub fn schedule_task(
     let root_task_folder = task_service.get_folder().unwrap();
 
     // if the same task exists, remove it
-    root_task_folder.delete_task(task_name).unwrap();
+    // root_task_folder.delete_task(&task_name).unwrap();
 
     // Create the task definition object to create the task
-    let mut task = task_service.new_task().unwrap();
+    let mut task_definition = task_service.new_task().unwrap();
 
     // Get the registration info for setting the identification
     // and put the author
-    let registration_info = task.get_registration_info();
+    let registration_info = task_definition.get_registration_info();
     registration_info.put_author("author name");
 
     // Create the principal for the task - these credentials are
     // overwritten with the credentials passed to RegisterTaskDefinition
-    let principal = task.get_principal();
+    let principal = task_definition.get_principal();
     principal.put_logon_type(TaskLogon::InteractiveToken);
 
     // create the settings for the task
-    let settings = task.get_settings();
+    let settings = task_definition.get_settings();
     settings.put_start_when_available(VARIANT_TRUE);
 
     // set the idle settings for the task
     let idle_settings = settings.get_idle_settings().unwrap();
     idle_settings.put_wait_timeout(Duration::minutes(5));
 
-    let trigger_collection = TriggerCollection::new(&task).unwrap();
-    let trigger = trigger_collection
-        .create(TaskTriggerType::TaskTriggerTime)
-        .unwrap();
+    let trigger_collection = TriggerCollection::new(&task_definition).unwrap();
+    // let trigger = trigger_collection
+    //     .create(TaskTriggerType::TaskTriggerTime)
+    //     .unwrap();
 
     unsafe {
-        let mut time_trigger: *mut ITimeTrigger = ptr::null_mut();
-        let mut hr = trigger.trigger.QueryInterface(
-            Box::into_raw(Box::new(ITimeTrigger::uuidof())),
-            &mut time_trigger as *mut *mut ITimeTrigger as *mut *mut c_void,
-        );
-        if FAILED(hr) {
-            println!("QueryInterface call failed for ITimeTrigger: {:X}", hr);
-            // root_task_folder.Release();
-            // task.Release();
-            return;
-        }
-        let time_trigger = time_trigger.as_mut().unwrap();
-
-        hr = time_trigger.put_Id(to_win_str("Trigger1").as_mut_ptr());
-        if FAILED(hr) {
-            println!("Cannot put trigger ID: {:X}", hr);
+        // sets the daily triggers
+        if let Some(daily_triggers) = triggers.daily {
+            for daily_trigger in daily_triggers {
+                let trigger_collection = TriggerCollection::new(&task_definition).unwrap();
+                let trigger = trigger_collection
+                    .create(TaskTriggerType::Daily(daily_trigger))
+                    .unwrap();
+            }
         }
 
-        // hr = time_trigger.put_EndBoundary(to_win_str("2021-01-01T12:12:00").as_mut_ptr());
-        hr = time_trigger.put_EndBoundary(to_win_str(&end_time.to_rfc3339()).as_mut_ptr());
-        if FAILED(hr) {
-            println!("Cannot put end boundary on trigger: {:X}", hr);
-        }
-
-        //  Set the task to start at a certain time. The time
-        //  format should be YYYY-MM-DDTHH:MM:SS(+-)(timezone).
-        //  For example, the start boundary below
-        //  is January 1st 2005 at 12:05
-        // hr = time_trigger.put_StartBoundary(to_win_str("2021-01-01T12:11:00").as_mut_ptr());
-        hr = time_trigger.put_StartBoundary(to_win_str(&start_time.to_rfc3339()).as_mut_ptr());
-        time_trigger.Release();
-        if FAILED(hr) {
-            println!("Cannot add start boundary to trigger: {:x}", hr);
-            // root_task_folder.Release();
-            // task.Release();
-            return;
+        // sets triggers that happen at specific times
+        if let Some(time_triggers) = triggers.time {
+            for trigger in time_triggers {
+                let trigger_collection = TriggerCollection::new(&task_definition).unwrap();
+                let trigger = trigger_collection
+                    .create(TaskTriggerType::SpecificTime(trigger))
+                    .unwrap();
+            }
         }
 
         // Add an action to the task. This task will execute notepad.exe
         let mut action_collection: *mut IActionCollection = ptr::null_mut();
-        hr = task
+        let mut hr = task_definition
             .task
             .get_Actions(&mut action_collection as *mut *mut IActionCollection);
         if FAILED(hr) {
             println!("Cannot get Task collection pointer: {:X}", hr);
             // root_task_folder.Release();
             // task.Release();
-            return;
+            // return;
         }
         let action_collection = &mut *action_collection;
 
@@ -171,7 +170,7 @@ pub fn schedule_task(
             println!("Cannot create the action: {:X}", hr);
             // root_task_folder.Release();
             // task.Release();
-            return;
+            // return;
         }
         let action = &mut *action;
 
@@ -185,7 +184,7 @@ pub fn schedule_task(
             println!("Cannot put action path: {:X}", hr);
             // root_task_folder.Release();
             // task.Release();
-            return;
+            // return;
         }
         let exec_action = &mut *exec_action;
 
@@ -200,9 +199,9 @@ pub fn schedule_task(
         let variant = Default::default();
         let mut registered_task: *mut IRegisteredTask = ptr::null_mut();
         hr = root_task_folder.task_folder.RegisterTaskDefinition(
-            to_win_str(task_name).as_mut_ptr(),
+            to_win_str(&task_name).as_mut_ptr(),
             // &mut task.task as *const ITaskDefinition,
-            task.as_ptr(),
+            task_definition.as_ptr(),
             TASK_CREATE_OR_UPDATE as i32,
             variant,
             variant,
@@ -215,7 +214,7 @@ pub fn schedule_task(
             println!("Error saving the Task: {:X}", hr);
             // root_task_folder.Release();
             // task.Release();
-            return;
+            // return;
         }
 
         println!("Success! Task successfully registered");
@@ -225,7 +224,194 @@ pub fn schedule_task(
         // task.Release();
         registered_task.as_mut().unwrap().Release();
     }
+
+    Ok(())
 }
+
+pub struct Actions(Vec<PathBuf>);
+
+/// There can only be up to 32 actions per task
+impl Actions {
+    pub fn new(path: PathBuf) -> Self {
+        if !&path.is_file() {
+            // return Err(TaskError::Error(
+            //     "The path does not point to a file".to_string(),
+            // ));
+            panic!("This should absolutely be a file");
+        }
+        Self(vec![path])
+    }
+}
+
+pub struct TaskTriggers {
+    daily: Option<Vec<DailyTrigger>>,
+    event: Option<Vec<EventTrigger>>,
+    idle: Option<IdleTrigger>,
+    registration: Option<RegistrationTrigger>,
+    time: Option<Vec<TimeTrigger>>,
+    logon: Option<LogonTrigger>,
+    boot: Option<BootTrigger>,
+    monthly: Option<Vec<MonthlyTrigger>>,
+    weekly: Option<Vec<WeeklyTrigger>>,
+}
+
+impl TaskTriggers {
+    pub fn new(builder: TaskTriggersBuilder) -> Self {
+        if builder.number_of_triggers == 0 {
+            panic!("There needs to be at least one trigger");
+        }
+        Self {
+            daily: builder.daily,
+            event: builder.event,
+            idle: builder.idle,
+            registration: builder.registration,
+            time: builder.specific_times,
+            logon: builder.logon,
+            boot: builder.boot,
+            monthly: builder.monthly,
+            weekly: builder.weekly,
+        }
+    }
+}
+/// A task can only have up to 48 triggers
+/// If you go over that limit then this will panic!
+pub struct TaskTriggersBuilder {
+    number_of_triggers: u8,
+    daily: Option<Vec<DailyTrigger>>,
+    event: Option<Vec<EventTrigger>>,
+    idle: Option<IdleTrigger>,
+    registration: Option<RegistrationTrigger>,
+    specific_times: Option<Vec<TimeTrigger>>,
+    logon: Option<LogonTrigger>,
+    boot: Option<BootTrigger>,
+    monthly: Option<Vec<MonthlyTrigger>>,
+    weekly: Option<Vec<WeeklyTrigger>>,
+}
+
+const MAX_TRIGGERS: u8 = 48;
+
+impl TaskTriggersBuilder {
+    pub fn new() -> Self {
+        Self {
+            number_of_triggers: 0,
+            daily: None,
+            event: None,
+            idle: None,
+            registration: None,
+            specific_times: None,
+            logon: None,
+            boot: None,
+            monthly: None,
+            weekly: None,
+        }
+    }
+
+    pub fn with_daily(mut self, daily: DailyTrigger) -> Self {
+        if self.number_of_triggers >= MAX_TRIGGERS {
+            panic!("You can only have up to 48 triggers on a task");
+        }
+
+        match self.daily {
+            Some(ref mut daily_triggers) => daily_triggers.push(daily),
+            None => {
+                let mut daily_triggers = Vec::new();
+                daily_triggers.push(daily);
+                self.daily = Some(daily_triggers);
+            }
+        }
+        self.number_of_triggers += 1;
+        self
+    }
+
+    pub fn with_specific_time(mut self, specific_time: TimeTrigger) -> Self {
+        if self.number_of_triggers >= MAX_TRIGGERS {
+            panic!("You can only have up to 48 triggers on a task");
+        }
+
+        match self.specific_times {
+            Some(ref mut specific_time_triggers) => specific_time_triggers.push(specific_time),
+            None => {
+                let mut specific_time_triggers = Vec::new();
+                specific_time_triggers.push(specific_time);
+                self.specific_times = Some(specific_time_triggers);
+            }
+        }
+        self.number_of_triggers += 1;
+        self
+    }
+
+    pub fn build(self) -> TaskTriggers {
+        TaskTriggers::new(self)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct DailyTrigger {
+    // validate that end time is after start time
+    start_time: Option<DateTime<Utc>>,
+    end_time: Option<DateTime<Utc>>,
+    interval: Option<u16>,
+    id: String,
+}
+impl DailyTrigger {
+    /// The start time will be Utc::now() and the end time will be 100 years
+    /// afterwards. The default interval will be every day if not specified
+    pub fn new(id: String) -> Self {
+        Self {
+            id,
+            start_time: None,
+            end_time: None,
+            interval: None,
+        }
+    }
+
+    /// The start time is also the time the task will be executed daily
+    /// If this isn't set then the start time will be set with Utc::now()
+    pub fn with_start_time(mut self, start: DateTime<Utc>) -> Self {
+        self.start_time = Some(start);
+        self
+    }
+    /// End time specifies the date that the task will stop activating.
+    /// If this isn't set then the end date will be ~100 years after Utc::now()
+    pub fn with_end_time(mut self, end: DateTime<Utc>) -> Self {
+        self.end_time = Some(end);
+        self
+    }
+
+    /// Interval is unfortunately represented as i16 in windows
+    /// so the max interval can only be up to i16::MAX
+    /// This probably shouldn't matter in practice
+    pub fn with_interval(mut self, interval: u16) -> Self {
+        self.interval = Some(interval);
+        self
+    }
+}
+pub struct EventTrigger {}
+pub struct IdleTrigger {}
+pub struct RegistrationTrigger {}
+pub struct TimeTrigger {
+    id: String,
+    time: DateTime<Utc>,
+    deactivate_date: Option<DateTime<Utc>>,
+}
+impl TimeTrigger {
+    pub fn new(id: String, time: DateTime<Utc>) -> Self {
+        Self {
+            id,
+            time,
+            deactivate_date: None,
+        }
+    }
+
+    pub fn deactivate_date(mut self, time: DateTime<Utc>) -> Self {
+        self.deactivate_date = Some(time);
+        self
+    }
+}
+pub struct LogonTrigger {}
+pub struct BootTrigger {}
+pub struct MonthlyTrigger {}
+pub struct WeeklyTrigger {}
 
 // #[cfg(test)]
 // mod tests {
