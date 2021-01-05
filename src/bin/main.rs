@@ -6,7 +6,9 @@ use core::default::Default;
 use iter::once;
 use std::{ffi::OsStr, path::PathBuf, ptr};
 use std::{iter, os::windows::ffi::OsStrExt};
-use task_scheduler::{execute_task, Actions, DailyTrigger, TaskTriggersBuilder, TimeTrigger, Utc};
+use task_scheduler::{
+    execute_task, Actions, DailyTrigger, SpecificTimeTrigger, TaskTriggersBuilder, Utc,
+};
 use winapi::{
     shared::wtypes::VARIANT_TRUE,
     um::{
@@ -46,11 +48,11 @@ fn main() {
         .with_start_time(Utc::now() + Duration::seconds(3))
         .with_end_time(Utc::now() + Duration::minutes(1));
 
-    let time_trigger = TimeTrigger::new(
+    let time_trigger = SpecificTimeTrigger::new(
         "My Time Trigger".to_string(),
         Utc::now() + Duration::seconds(1),
     );
-    let other_time_trigger = TimeTrigger::new(
+    let other_time_trigger = SpecificTimeTrigger::new(
         "My Other Time Trigger".to_string(),
         Utc::now() + Duration::seconds(10),
     );
@@ -63,5 +65,5 @@ fn main() {
         .build();
     let actions = Actions::new(task_path);
 
-    execute_task(actions, task_name.to_owned(), triggers);
+    execute_task(actions, task_name.to_owned(), triggers).unwrap();
 }

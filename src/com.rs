@@ -12,61 +12,8 @@ use winapi::{
     },
 };
 
-use crate::error::WinError;
+use crate::error::{ComError, WinError};
 /// These are potential errors when initializing com and its security levels
-#[derive(Debug)]
-pub enum ComError {
-    /// A previous call to CoInitializeEx specified the concurrency model
-    /// for this thread as multithread apartment (MTA). This could also
-    /// indicate that a change from neutral-threaded apartment to single-threaded
-    /// apartment has occurred.
-    RpcChangedMode,
-    /// CoInitializeSecurity has already been called.
-    RpcTooLate,
-    /// The asAuthSvc parameter was not NULL, and none of the authentication
-    /// services in the list could be registered. Check the results saved
-    /// in asAuthSvc for authentication service–specific error codes.
-    NoGoodSecurityPackages,
-    /// A specified class is not registered in the registration database.
-    /// Also can indicate that the type of server you requested in the CLSCTX
-    ///enumeration is not registered or the values for the server types in the
-    /// registry are corrupt.
-    RegdbClassNotReg,
-    /// This class cannot be created as part of an aggregate.
-    ClassNoAggregation,
-    /// The specified class does not implement the requested interface, or
-    /// the controlling IUnknown does not expose the requested interface.
-    NoInterface,
-    GeneralError(WinError),
-}
-
-impl fmt::Display for ComError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            ComError::RpcChangedMode => {
-                write!(f, "A previous call to CoInitializeEx specified the concurrency model for this thread as multithread apartment (MTA). This could also indicate that a change from neutral-threaded apartment to single-threaded apartment has occurred.")
-            }
-            ComError::RpcTooLate => {
-                write!(f, "CoInitializeSecurity has already been called.")
-            }
-            ComError::NoGoodSecurityPackages => {
-                write!(f, "The asAuthSvc parameter was not NULL, and none of the authentication services in the list could be registered. Check the results saved in asAuthSvc for authentication service–specific error codes.")
-            }
-            ComError::GeneralError(common_error) => {
-                write!(f, "{}", common_error.to_string())
-            }
-            ComError::RegdbClassNotReg => {
-                write!(f, "A specified class is not registered in the registration database. Also can indicate that the type of server you requested in the CLSCTX enumeration is not registered or the values for the server types in the registry are corrupt.")
-            }
-            ComError::ClassNoAggregation => {
-                write!(f, "This class cannot be created as part of an aggregate.")
-            }
-            ComError::NoInterface => {
-                write!(f, "The specified class does not implement the requested interface, or the controlling IUnknown does not expose the requested interface.")
-            }
-        }
-    }
-}
 
 pub(crate) struct Com;
 

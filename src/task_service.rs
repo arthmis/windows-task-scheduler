@@ -13,7 +13,10 @@ use winapi::{
 };
 
 use crate::{
-    com::ComError, error::WinError, task::TaskDefinition, task_folder::TaskFolder, to_win_str,
+    error::{ComError, TaskError, TaskServiceError, WinError},
+    task::TaskDefinition,
+    task_folder::TaskFolder,
+    to_win_str,
 };
 
 // pub struct TaskService<'a> {
@@ -24,7 +27,7 @@ pub(crate) struct TaskService<'a> {
 }
 
 impl<'a> TaskService<'a> {
-    pub(crate) fn new() -> Result<Self, TaskServiceError> {
+    pub(crate) fn new() -> Result<Self, TaskError> {
         unsafe {
             // Create an instance of the task service
             // this isn't properly documented, however these are pointers to GUIDs for these particular
@@ -45,15 +48,13 @@ impl<'a> TaskService<'a> {
             if FAILED(hr) {
                 error!("Failed to create an instance of TaskService: {:X}", hr);
                 match hr {
-                    REGDB_E_CLASSNOTREG => {
-                        return Err(TaskServiceError::ComError(ComError::RegdbClassNotReg))
-                    }
+                    REGDB_E_CLASSNOTREG => return Err(TaskError::from(ComError::RegdbClassNotReg)),
                     CLASS_E_NOAGGREGATION => {
-                        return Err(TaskServiceError::ComError(ComError::ClassNoAggregation))
+                        return Err(TaskError::from(ComError::ClassNoAggregation))
                     }
-                    E_NOINTERFACE => return Err(TaskServiceError::ComError(ComError::NoInterface)),
+                    E_NOINTERFACE => return Err(TaskError::from(ComError::NoInterface)),
                     E_POINTER => {
-                        return Err(TaskServiceError::WinError(WinError::Pointer(
+                        return Err(TaskError::from(WinError::Pointer(
                             "The ppv parameter is NULL".to_string(),
                         )))
                     }
@@ -80,7 +81,7 @@ impl<'a> TaskService<'a> {
     /// This will use a zeroed union by default for the actual api. In the future
     /// it will hopefully be possible to accept the appropriate parameters.
     #[must_use = "This function needs to be called before the other methods can be used"]
-    fn connect(&self) -> Result<(), TaskServiceError> {
+    fn connect(&self) -> Result<(), TaskError> {
         // connect to the task service
         let variant: VARIANT = Default::default();
         unsafe {
@@ -91,14 +92,24 @@ impl<'a> TaskService<'a> {
             if FAILED(hr) {
                 error!("ITaskService::Connect failed: {:X}", hr);
                 match hr {
-                    E_ACCESS_DENIED => return Err(TaskServiceError::AccessDenied),
+                    E_ACCESS_DENIED => return Err(TaskError::from(TaskServiceError::AccessDenied)),
                     SCHED_E_SERVICE_NOT_RUNNING => {
-                        return Err(TaskServiceError::SchedulerServiceNotRunning)
+                        return Err(TaskError::from(
+                            TaskServiceError::SchedulerServiceNotRunning,
+                        ))
                     }
-                    ERROR_BAD_NET_PATH => return Err(TaskServiceError::BadNetPath),
-                    ERROR_NOT_SUPPORTED => return Err(TaskServiceError::NotSupported),
-                    E_OUT_OF_MEMORY => {
-                        return Err(TaskServiceError::WinError(WinError::OutOfMemory))
+                    ERROR_BAD_NET_PATH => {
+                        return Err(TaskError::from(TaskServiceError::BadNetPath))
+                    }
+                    ERROR_NOT_SUPPORTED => {
+                        return Err(TaskError::from(TaskServiceError::NotSupported))
+                    }
+                    E_OUT_OF_MEMORY => return Err(TaskError::from(WinError::OutOfMemory)),
+                    _ => {
+                        return Err(TaskError::Error(format!(
+                            "ITask service::connect failed: {:X}",
+                            hr
+                        )));
                     }
                 }
             }
@@ -128,23 +139,4 @@ impl<'a> Drop for TaskService<'a> {
             self.task_service.Release();
         }
     }
-}
-#[derive(Debug)]
-pub enum TaskServiceError {
-    /// Access is denied to connect to the Task Scheduler service.
-    AccessDenied,
-    /// The Task Scheduler service is not running.
-    SchedulerServiceNotRunning,
-
-    /// This error is returned in the following situations:
-    /// The computer name specified in the serverName parameter does not exist.
-    /// When you are trying to connect to a Windows Server 2003 or Windows XP computer, and the remote computer does not have the File and Printer Sharing firewall exception enabled or the Remote Registry service is not running.
-    /// When you are trying to connect to a Windows Vista computer, and the remote computer does not have the Remote Scheduled Tasks Management firewall exception enabled and the File and Printer Sharing firewall exception enabled, or the Remote Registry service is not running.
-    BadNetPath,
-    /// The user, password, or domain parameters cannot be specified when connecting to a remote Windows XP or Windows Server 2003 computer from a Windows Vista computer.
-    NotSupported,
-    /// Common errors for windows [`WinError`]
-    WinError(WinError),
-    /// [`ComError`]
-    ComError(ComError),
 }

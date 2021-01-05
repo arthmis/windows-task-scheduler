@@ -15,8 +15,7 @@ use winapi::{
 };
 
 use crate::{
-    error::WinError, task::TaskDefinition, to_win_str, trigger::TriggerInterface, DailyTrigger,
-    TimeTrigger,
+    error::WinError, task::TaskDefinition, to_win_str, DailyTrigger, SpecificTimeTrigger, TaskError,
 };
 
 /// Provides the methods that are used to add to, remove from, and get the triggers of a task.
@@ -55,150 +54,148 @@ impl<'a> TriggerCollection<'a> {
     /// execute all of its parameters
     ///
     /// https://docs.microsoft.com/en-us/windows/win32/api/taskschd/nf-taskschd-itriggercollection-create
-    pub(crate) fn create(&self, task_trigger_type: TaskTriggerType) -> Result<(), WinError> {
-        unsafe {
-            match task_trigger_type {
-                TaskTriggerType::Daily(ref trigger) => {
-                    let mut trigger_interface: *mut ITrigger = ptr::null_mut();
-                    let hr = self.trigger_collection.Create(
-                        // task_trigger_type as u32,
+    pub(crate) fn create(&self, task_trigger_type: TaskTriggerType) -> Result<(), TaskError> {
+        match task_trigger_type {
+            // TaskTriggerType::Daily(ref trigger) => {
+            //     let mut trigger_interface: *mut ITrigger = ptr::null_mut();
+            //     let hr = unsafe {
+            //         self.trigger_collection.Create(
+            //             // task_trigger_type as u32,
+            //             task_trigger_type.as_type(),
+            //             &mut trigger_interface as *mut *mut ITrigger,
+            //         )
+            //     };
+            //     if FAILED(hr) {
+            //         println!("Cannot create trigger: {:X}", hr);
+            //         return Err(WinError::UnknownError(format!(
+            //             "Cannot create trigger: {:X}",
+            //             hr
+            //         )));
+            //     }
+            //     let trigger_interface = &mut *trigger_interface;
+
+            //     let mut daily_trigger: *mut IDailyTrigger = ptr::null_mut();
+            //     let mut hr = trigger_interface.QueryInterface(
+            //         Box::into_raw(Box::new(IDailyTrigger::uuidof())),
+            //         &mut daily_trigger as *mut *mut IDailyTrigger as *mut *mut c_void,
+            //     );
+            //     // match on each part of the daily struct, this will contain
+            //     // all the configuration patterns, using this I can execute the
+            //     // relevant functions on IDailyTrigger
+            //     if FAILED(hr) {
+            //         println!("QueryInterface call failed for ITimeTrigger: {:X}", hr);
+            //         // root_task_folder.Release();
+            //         // task.Release();
+            //         // return;
+            //     }
+            //     let daily_trigger = daily_trigger.as_mut().unwrap();
+
+            //     // let mut hr = daily_trigger.put_Id(to_win_str("Trigger1").as_mut_ptr());
+            //     let mut hr = daily_trigger.put_Id(to_win_str(&trigger.id).as_mut_ptr());
+            //     if FAILED(hr) {
+            //         println!("Cannot put trigger ID: {:X}", hr);
+            //     }
+
+            //     //  Set the task to start at a certain time. The time
+            //     //  format should be YYYY-MM-DDTHH:MM:SS(+-)(timezone).
+            //     //  For example, the start boundary below
+            //     //  is January 1st 2005 at 12:05
+            //     // hr = time_trigger.put_StartBoundary(to_win_str("2021-01-01T12:11:00").as_mut_ptr());
+            //     let start_time = if let Some(start_time) = trigger.start_time {
+            //         start_time
+            //     } else {
+            //         Utc::now()
+            //     };
+            //     hr = daily_trigger
+            //         .put_StartBoundary(to_win_str(&start_time.to_rfc3339()).as_mut_ptr());
+            //     if FAILED(hr) {
+            //         println!("Cannot add start boundary to trigger: {:x}", hr);
+            //         // root_task_folder.Release();
+            //         // task.Release();
+            //     }
+            //     // hr = time_trigger.put_EndBoundary(to_win_str("2021-01-01T12:12:00").as_mut_ptr());
+            //     let end_time = if let Some(end_time) = trigger.end_time {
+            //         end_time
+            //     } else {
+            //         Utc::now() + Duration::weeks(52 * 100)
+            //     };
+            //     hr = daily_trigger.put_EndBoundary(to_win_str(&end_time.to_rfc3339()).as_mut_ptr());
+            //     if FAILED(hr) {
+            //         println!("Cannot put end boundary on trigger: {:X}", hr);
+            //     }
+
+            //     let interval = if let Some(interval) = trigger.interval {
+            //         interval
+            //     } else {
+            //         1
+            //     };
+            //     daily_trigger.put_DaysInterval(interval as i16);
+            //     daily_trigger.Release();
+            // }
+            TaskTriggerType::SpecificTime(ref specific_time_trigger) => {
+                let mut trigger_interface: *mut ITrigger = ptr::null_mut();
+                let hr = unsafe {
+                    self.trigger_collection.Create(
                         task_trigger_type.as_type(),
                         &mut trigger_interface as *mut *mut ITrigger,
-                    );
-                    if FAILED(hr) {
-                        println!("Cannot create trigger: {:X}", hr);
-                        return Err(WinError::UnknownError(format!(
-                            "Cannot create trigger: {:X}",
-                            hr
-                        )));
-                    }
-                    let trigger_interface = &mut *trigger_interface;
-
-                    let mut daily_trigger: *mut IDailyTrigger = ptr::null_mut();
-                    let mut hr = trigger_interface.QueryInterface(
-                        Box::into_raw(Box::new(IDailyTrigger::uuidof())),
-                        &mut daily_trigger as *mut *mut IDailyTrigger as *mut *mut c_void,
-                    );
-                    // match on each part of the daily struct, this will contain
-                    // all the configuration patterns, using this I can execute the
-                    // relevant functions on IDailyTrigger
-                    if FAILED(hr) {
-                        println!("QueryInterface call failed for ITimeTrigger: {:X}", hr);
-                        // root_task_folder.Release();
-                        // task.Release();
-                        // return;
-                    }
-                    let daily_trigger = daily_trigger.as_mut().unwrap();
-
-                    // let mut hr = daily_trigger.put_Id(to_win_str("Trigger1").as_mut_ptr());
-                    let mut hr = daily_trigger.put_Id(to_win_str(&trigger.id).as_mut_ptr());
-                    if FAILED(hr) {
-                        println!("Cannot put trigger ID: {:X}", hr);
-                    }
-
-                    //  Set the task to start at a certain time. The time
-                    //  format should be YYYY-MM-DDTHH:MM:SS(+-)(timezone).
-                    //  For example, the start boundary below
-                    //  is January 1st 2005 at 12:05
-                    // hr = time_trigger.put_StartBoundary(to_win_str("2021-01-01T12:11:00").as_mut_ptr());
-                    let start_time = if let Some(start_time) = trigger.start_time {
-                        start_time
-                    } else {
-                        Utc::now()
-                    };
-                    hr = daily_trigger
-                        .put_StartBoundary(to_win_str(&start_time.to_rfc3339()).as_mut_ptr());
-                    if FAILED(hr) {
-                        println!("Cannot add start boundary to trigger: {:x}", hr);
-                        // root_task_folder.Release();
-                        // task.Release();
-                    }
-                    // hr = time_trigger.put_EndBoundary(to_win_str("2021-01-01T12:12:00").as_mut_ptr());
-                    let end_time = if let Some(end_time) = trigger.end_time {
-                        end_time
-                    } else {
-                        Utc::now() + Duration::weeks(52 * 100)
-                    };
-                    hr = daily_trigger
-                        .put_EndBoundary(to_win_str(&end_time.to_rfc3339()).as_mut_ptr());
-                    if FAILED(hr) {
-                        println!("Cannot put end boundary on trigger: {:X}", hr);
-                    }
-
-                    let interval = if let Some(interval) = trigger.interval {
-                        interval
-                    } else {
-                        1
-                    };
-                    daily_trigger.put_DaysInterval(interval as i16);
-                    daily_trigger.Release();
+                    )
+                };
+                if FAILED(hr) {
+                    println!("Cannot create trigger: {:X}", hr);
+                    return Err(TaskError::from(WinError::UnknownError(format!(
+                        "Cannot create trigger with type SpecificTime\nError code is: {:X}",
+                        hr
+                    ))));
                 }
-                TaskTriggerType::SpecificTime(ref specific_time_trigger) => {
-                    let mut trigger_interface: *mut ITrigger = ptr::null_mut();
-                    let hr = self.trigger_collection.Create(
-                        task_trigger_type.as_type(),
-                        &mut trigger_interface as *mut *mut ITrigger,
-                    );
-                    if FAILED(hr) {
-                        println!("Cannot create trigger: {:X}", hr);
-                        return Err(WinError::UnknownError(format!(
-                            "Cannot create trigger: {:X}",
-                            hr
-                        )));
-                    }
-                    let trigger_interface = &mut *trigger_interface;
+                let trigger_interface = unsafe { TriggerInterface::new(trigger_interface) };
 
-                    let mut time_trigger: *mut ITimeTrigger = ptr::null_mut();
-                    let mut hr = trigger_interface.QueryInterface(
+                let mut time_trigger: *mut ITimeTrigger = ptr::null_mut();
+                let mut hr = unsafe {
+                    trigger_interface.trigger.QueryInterface(
                         Box::into_raw(Box::new(ITimeTrigger::uuidof())),
                         &mut time_trigger as *mut *mut ITimeTrigger as *mut *mut c_void,
-                    );
-                    // match on each part of the daily struct, this will contain
-                    // all the configuration patterns, using this I can execute the
-                    // relevant functions on IDailyTrigger
-                    if FAILED(hr) {
-                        println!("QueryInterface call failed for ITimeTrigger: {:X}", hr);
-                        // root_task_folder.Release();
-                        // task.Release();
-                        // return;
-                    }
-                    let time_trigger = time_trigger.as_mut().unwrap();
-
-                    // let mut hr = daily_trigger.put_Id(to_win_str("Trigger1").as_mut_ptr());
-                    hr = time_trigger.put_Id(to_win_str(&specific_time_trigger.id).as_mut_ptr());
-                    if FAILED(hr) {
-                        println!("Cannot put trigger ID: {:X}", hr);
-                    }
-
-                    //  Set the task to start at a certain time. The time
-                    //  format should be YYYY-MM-DDTHH:MM:SS(+-)(timezone).
-                    //  For example, the start boundary below
-                    //  is January 1st 2005 at 12:05
-                    // hr = time_trigger.put_StartBoundary(to_win_str("2021-01-01T12:11:00").as_mut_ptr());
-                    let start_time = specific_time_trigger.time;
-                    hr = time_trigger
-                        .put_StartBoundary(to_win_str(&start_time.to_rfc3339()).as_mut_ptr());
-                    if FAILED(hr) {
-                        println!("Cannot add start boundary to trigger: {:x}", hr);
-                        // root_task_folder.Release();
-                        // task.Release();
-                    }
-                    // hr = time_trigger.put_EndBoundary(to_win_str("2021-01-01T12:12:00").as_mut_ptr());
-                    let end_time = if let Some(end_time) = specific_time_trigger.deactivate_date {
-                        end_time
-                    } else {
-                        Utc::now() + Duration::weeks(52 * 100)
-                    };
-                    hr = time_trigger
-                        .put_EndBoundary(to_win_str(&end_time.to_rfc3339()).as_mut_ptr());
-                    if FAILED(hr) {
-                        println!("Cannot put end boundary on trigger: {:X}", hr);
-                    }
-
-                    time_trigger.Release();
+                    )
+                };
+                if FAILED(hr) {
+                    println!("QueryInterface call failed for ITimeTrigger: {:X}", hr);
                 }
-                _ => unimplemented!("These will be implemented some day"),
+                let time_trigger = unsafe { TimeTrigger::new(time_trigger) };
+
+                let hr = unsafe {
+                    time_trigger
+                        .time_trigger
+                        .put_Id(to_win_str(&specific_time_trigger.id).as_mut_ptr())
+                };
+                if FAILED(hr) {
+                    println!("Cannot put trigger ID: {:X}", hr);
+                }
+
+                //  Set the task to start at a certain time. The time
+                //  format should be YYYY-MM-DDTHH:MM:SS(+-)(timezone).
+                let start_time = specific_time_trigger.time;
+                let hr = unsafe {
+                    time_trigger
+                        .time_trigger
+                        .put_StartBoundary(to_win_str(&start_time.to_rfc3339()).as_mut_ptr())
+                };
+                if FAILED(hr) {
+                    println!("Cannot add start boundary to trigger: {:x}", hr);
+                }
+                let end_time = if let Some(end_time) = specific_time_trigger.deactivate_date {
+                    end_time
+                } else {
+                    Utc::now() + Duration::weeks(52 * 100)
+                };
+                let hr = unsafe {
+                    time_trigger
+                        .time_trigger
+                        .put_EndBoundary(to_win_str(&end_time.to_rfc3339()).as_mut_ptr())
+                };
+                if FAILED(hr) {
+                    println!("Cannot put end boundary on trigger: {:X}", hr);
+                }
             }
+            _ => unimplemented!("These will be implemented some day"),
         }
 
         Ok(())
@@ -227,11 +224,12 @@ impl<'a> Drop for TriggerCollection<'a> {
 /// When the task will be triggered
 ///
 /// https://docs.microsoft.com/en-us/windows/win32/api/taskschd/ne-taskschd-task_trigger_type2
+#[derive(Debug)]
 pub enum TaskTriggerType {
     /// Triggers the task when a specific event occurs.
     Event,
     /// Triggers the task at a specific time of day.
-    SpecificTime(TimeTrigger),
+    SpecificTime(SpecificTimeTrigger),
     /// Triggers the task on a daily schedule. For example, the task starts at a specific time every day, every-other day, every third day, and so on.
     Daily(DailyTrigger),
     /// Triggers the task on a weekly schedule. For example, the task starts at 8:00 AM on a specific day every week or other week.
@@ -270,6 +268,70 @@ impl TaskTriggerType {
             TaskTriggerType::Logon => TASK_TRIGGER_LOGON,
             TaskTriggerType::SessionStateChange => TASK_TRIGGER_SESSION_STATE_CHANGE,
             TaskTriggerType::CustomTrigger01 => TASK_TRIGGER_CUSTOM_TRIGGER_01,
+        }
+    }
+}
+
+/// Provides the common properties that are inherited by all trigger objects.
+///
+/// https://docs.microsoft.com/en-us/windows/win32/api/taskschd/nn-taskschd-itrigger
+pub(crate) struct TriggerInterface<'a> {
+    trigger: &'a mut ITrigger,
+}
+
+impl<'a> TriggerInterface<'a> {
+    /// Creates new trigger interface from trigger collection
+    ///
+    /// Unsafety: The trigger parameter should point to valid ITrigger interface
+    unsafe fn new(trigger: *mut ITrigger) -> Self {
+        TriggerInterface {
+            trigger: &mut *trigger,
+        }
+    }
+
+    // pub(crate) fn query_interface(&self) -> Result<TimeTrigger, WinError> {
+    //     unsafe {
+    //         let mut time_trigger: *mut ITimeTrigger = ptr::null_mut();
+    //         let mut hr = self.trigger.QueryInterface(
+    //             Box::into_raw(Box::new(ITimeTrigger::uuidof())),
+    //             &mut time_trigger as *mut *mut ITimeTrigger as *mut *mut c_void,
+    //         );
+    //         if FAILED(hr) {
+    //             error!("QueryInterface call failed for ITimeTrigger: {:X}", hr);
+    //             // root_task_folder.Release();
+    //             return Err(WinError::UnknownError(format!(
+    //                 "QueryInterface call failed for ITimeTrigger: {:X}",
+    //                 hr
+    //             )));
+    //         }
+    //         Ok(TimeTrigger::new(time_trigger))
+    //     }
+    // }
+}
+
+impl<'a> Drop for TriggerInterface<'a> {
+    fn drop(&mut self) {
+        unsafe {
+            self.trigger.Release();
+        }
+    }
+}
+
+struct TimeTrigger<'a> {
+    time_trigger: &'a mut ITimeTrigger,
+}
+
+impl<'a> TimeTrigger<'a> {
+    unsafe fn new(time_trigger: *mut ITimeTrigger) -> Self {
+        Self {
+            time_trigger: &mut *time_trigger,
+        }
+    }
+}
+impl<'a> Drop for TimeTrigger<'a> {
+    fn drop(&mut self) {
+        unsafe {
+            self.time_trigger.Release();
         }
     }
 }
