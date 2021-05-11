@@ -158,6 +158,10 @@ impl<'a> TriggerCollection<'a> {
                 };
                 if FAILED(hr) {
                     println!("QueryInterface call failed for ITimeTrigger: {:X}", hr);
+                    return Err(TaskError::from(WinError::UnknownError(format!(
+                        "QueryInterface call failed for ITimeTrigger: {:X}",
+                        hr,
+                    ))));
                 }
                 let time_trigger = unsafe { TimeTrigger::new(time_trigger) };
 
@@ -168,6 +172,10 @@ impl<'a> TriggerCollection<'a> {
                 };
                 if FAILED(hr) {
                     println!("Cannot put trigger ID: {:X}", hr);
+                    return Err(TaskError::from(WinError::UnknownError(format!(
+                        "Cannot put trigger ID: {:X}",
+                        hr,
+                    ))));
                 }
 
                 //  Set the task to start at a certain time. The time
@@ -180,6 +188,10 @@ impl<'a> TriggerCollection<'a> {
                 };
                 if FAILED(hr) {
                     println!("Cannot add start boundary to trigger: {:x}", hr);
+                    return Err(TaskError::from(WinError::UnknownError(format!(
+                        "Cannot add start boundary to trigger: {:X}",
+                        hr,
+                    ))));
                 }
                 let end_time = if let Some(end_time) = specific_time_trigger.deactivate_date {
                     end_time
@@ -193,6 +205,10 @@ impl<'a> TriggerCollection<'a> {
                 };
                 if FAILED(hr) {
                     println!("Cannot put end boundary on trigger: {:X}", hr);
+                    return Err(TaskError::from(WinError::UnknownError(format!(
+                        "Cannot add end boundary to trigger: {:X}",
+                        hr,
+                    ))));
                 }
             }
             _ => unimplemented!("These will be implemented some day"),

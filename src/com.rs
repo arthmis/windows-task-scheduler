@@ -12,7 +12,7 @@ use winapi::{
     },
 };
 
-use crate::error::{ComError, WinError};
+use crate::error::{ComError, TaskError, WinError};
 /// These are potential errors when initializing com and its security levels
 
 pub(crate) struct Com;
@@ -23,7 +23,7 @@ impl Com {
     // I might split initialization and security initialization into
     // a builder function; for now this is fine
     #[allow(clippy::new_ret_no_self)]
-    pub fn initialize() -> Result<Self, ComError> {
+    pub fn initialize() -> Result<Self, TaskError> {
         unsafe {
             // pvReserved is a reserved paramter and must be null
             let hr = combaseapi::CoInitializeEx(
@@ -35,7 +35,7 @@ impl Com {
             if FAILED(hr) {
                 error!("Com initialization failed: {:X}", hr);
                 match hr {
-                    _RPC_E_CHANGED_MODE => return Err(ComError::RpcChangedMode),
+                    _RPC_E_CHANGED_MODE => return Err(TaskError::from(ComError::RpcChangedMode)),
                     _ => unreachable!(),
                 }
             }
@@ -56,11 +56,11 @@ impl Com {
             if FAILED(hr) {
                 error!("Com security initialization failed: {:X}", hr);
                 match hr {
-                    RPC_E_TOO_LATE => return Err(ComError::RpcTooLate),
+                    RPC_E_TOO_LATE => return Err(TaskError::from(ComError::RpcTooLate)),
                     RPC_E_NO_GOOD_SECURITY_PACKAGES => {
-                        return Err(ComError::NoGoodSecurityPackages)
+                        return Err(TaskError::from(ComError::NoGoodSecurityPackages))
                     }
-                    E_OUT_OF_MEMORY => return Err(ComError::GeneralError(WinError::OutOfMemory)),
+                    E_OUT_OF_MEMORY => return Err(TaskError::from(WinError::OutOfMemory)),
                 }
             }
         }

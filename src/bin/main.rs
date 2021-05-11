@@ -61,7 +61,7 @@ fn main() {
     // let triggers = triggers.with_daily(daily_trigger).build();
     let triggers = triggers
         .with_specific_time(time_trigger)
-        .with_specific_time(other_time_trigger)
+        // .with_specific_time(other_time_trigger)
         .build();
     let actions = Actions::new(task_path);
 

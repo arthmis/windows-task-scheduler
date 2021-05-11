@@ -19,16 +19,13 @@ use crate::{
     to_win_str,
 };
 
-// pub struct TaskService<'a> {
-//     task_service: &'a mut ITaskService,
-// }
 pub(crate) struct TaskService<'a> {
     pub(crate) task_service: &'a mut ITaskService,
 }
 
 impl<'a> TaskService<'a> {
     pub(crate) fn new() -> Result<Self, TaskError> {
-        unsafe {
+        let (task_service, hr) = unsafe {
             // Create an instance of the task service
             // this isn't properly documented, however these are pointers to GUIDs for these particular
             // classes. winapi has uuidof method to get the guid
@@ -36,40 +33,42 @@ impl<'a> TaskService<'a> {
             let CLSID_TaskScheduler = Box::into_raw(Box::new(TaskScheduler::uuidof()));
             let IID_ITaskService = Box::into_raw(Box::new(ITaskService::uuidof()));
             let mut task_service: *mut ITaskService = core::ptr::null_mut();
-            let hr = CoCreateInstance(
-                CLSID_TaskScheduler,
-                ptr::null_mut(),
-                CLSCTX_INPROC_SERVER,
-                IID_ITaskService,
-                // have to figure out how this pointer casting works
-                &mut task_service as *mut *mut ITaskService as *mut *mut c_void,
-            );
+            (
+                task_service,
+                CoCreateInstance(
+                    CLSID_TaskScheduler,
+                    ptr::null_mut(),
+                    CLSCTX_INPROC_SERVER,
+                    IID_ITaskService,
+                    // have to figure out how this pointer casting works
+                    &mut task_service as *mut *mut ITaskService as *mut *mut c_void,
+                ),
+            )
+        };
 
-            if FAILED(hr) {
-                error!("Failed to create an instance of TaskService: {:X}", hr);
-                match hr {
-                    REGDB_E_CLASSNOTREG => return Err(TaskError::from(ComError::RegdbClassNotReg)),
-                    CLASS_E_NOAGGREGATION => {
-                        return Err(TaskError::from(ComError::ClassNoAggregation))
-                    }
-                    E_NOINTERFACE => return Err(TaskError::from(ComError::NoInterface)),
-                    E_POINTER => {
-                        return Err(TaskError::from(WinError::Pointer(
-                            "The ppv parameter is NULL".to_string(),
-                        )))
-                    }
+        if FAILED(hr) {
+            error!("Failed to create an instance of TaskService: {:X}", hr);
+            match hr {
+                REGDB_E_CLASSNOTREG => return Err(TaskError::from(ComError::RegdbClassNotReg)),
+                CLASS_E_NOAGGREGATION => return Err(TaskError::from(ComError::ClassNoAggregation)),
+                E_NOINTERFACE => return Err(TaskError::from(ComError::NoInterface)),
+                E_POINTER => {
+                    return Err(TaskError::from(WinError::Pointer(
+                        "The ppv parameter is NULL".to_string(),
+                    )))
                 }
             }
-            let task_service = Self {
-                // I can safely dereference this pointer here because I handle the
-                // error where the pointer might be null
-                task_service: &mut *task_service,
-            };
-            match task_service.connect() {
-                Ok(_) => Ok(task_service),
-                Err(error) => Err(error),
-            }
-            // Ok(task_service)
+        }
+
+        let task_service = Self {
+            // I can safely dereference this pointer here because I handle the
+            // error where the pointer might be null
+            task_service: unsafe { &mut *task_service },
+        };
+
+        match task_service.connect() {
+            Ok(_) => Ok(task_service),
+            Err(error) => Err(error),
         }
     }
 
@@ -84,33 +83,28 @@ impl<'a> TaskService<'a> {
     fn connect(&self) -> Result<(), TaskError> {
         // connect to the task service
         let variant: VARIANT = Default::default();
-        unsafe {
-            let hr = self
-                .task_service
-                .Connect(variant, variant, variant, variant);
+        let hr = unsafe {
+            self.task_service
+                .Connect(variant, variant, variant, variant)
+        };
 
-            if FAILED(hr) {
-                error!("ITaskService::Connect failed: {:X}", hr);
-                match hr {
-                    E_ACCESS_DENIED => return Err(TaskError::from(TaskServiceError::AccessDenied)),
-                    SCHED_E_SERVICE_NOT_RUNNING => {
-                        return Err(TaskError::from(
-                            TaskServiceError::SchedulerServiceNotRunning,
-                        ))
-                    }
-                    ERROR_BAD_NET_PATH => {
-                        return Err(TaskError::from(TaskServiceError::BadNetPath))
-                    }
-                    ERROR_NOT_SUPPORTED => {
-                        return Err(TaskError::from(TaskServiceError::NotSupported))
-                    }
-                    E_OUT_OF_MEMORY => return Err(TaskError::from(WinError::OutOfMemory)),
-                    _ => {
-                        return Err(TaskError::Error(format!(
-                            "ITask service::connect failed: {:X}",
-                            hr
-                        )));
-                    }
+        if FAILED(hr) {
+            error!("ITaskService::Connect failed: {:X}", hr);
+            match hr {
+                E_ACCESS_DENIED => return Err(TaskError::from(TaskServiceError::AccessDenied)),
+                SCHED_E_SERVICE_NOT_RUNNING => {
+                    return Err(TaskError::from(
+                        TaskServiceError::SchedulerServiceNotRunning,
+                    ))
+                }
+                ERROR_BAD_NET_PATH => return Err(TaskError::from(TaskServiceError::BadNetPath)),
+                ERROR_NOT_SUPPORTED => return Err(TaskError::from(TaskServiceError::NotSupported)),
+                E_OUT_OF_MEMORY => return Err(TaskError::from(WinError::OutOfMemory)),
+                _ => {
+                    return Err(TaskError::Error(format!(
+                        "ITask service::connect failed: {:X}",
+                        hr
+                    )));
                 }
             }
         }

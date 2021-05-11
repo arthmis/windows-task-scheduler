@@ -85,7 +85,7 @@ pub fn execute_task(
     let mut exe_path = to_win_str(actions.0[0].to_str().unwrap());
 
     // Create an instance of the task service
-    let task_service = TaskService::new().unwrap();
+    let task_service = TaskService::new()?;
 
     // Get the root task folder. This folder will hold the
     // new task that is registered
@@ -157,9 +157,10 @@ pub fn execute_task(
         action_collection.Release();
         if FAILED(hr) {
             println!("Cannot create the action: {:X}", hr);
-            // root_task_folder.Release();
-            // task.Release();
-            // return;
+            return Err(TaskError::from(WinError::UnknownError(format!(
+                "Cannot create the action: {:X}",
+                hr
+            ))));
         }
         let action = &mut *action;
 
@@ -170,10 +171,11 @@ pub fn execute_task(
             &mut exec_action as *mut *mut IExecAction as *mut *mut c_void,
         );
         if FAILED(hr) {
-            println!("Cannot put action path: {:X}", hr);
-            // root_task_folder.Release();
-            // task.Release();
-            // return;
+            println!("Cannot get IExecAction interface: {:X}", hr);
+            return Err(TaskError::from(WinError::UnknownError(format!(
+                "Cannot get IExecAction interface: {:X}",
+                hr
+            ))));
         }
         let exec_action = &mut *exec_action;
 
@@ -182,6 +184,10 @@ pub fn execute_task(
         exec_action.Release();
         if FAILED(hr) {
             println!("Cannot put action path: {:X}", hr);
+            return Err(TaskError::from(WinError::UnknownError(format!(
+                "Cannot put action path: {:X}",
+                hr
+            ))));
         }
 
         // Save the task in the root folder
