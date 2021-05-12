@@ -22,14 +22,14 @@ use std::{iter, os::windows::ffi::OsStrExt};
 
 mod com;
 mod error;
-// mod idle_settings;
-// mod principal;
-// mod registration_info;
-// mod task;
-// mod task_folder;
+mod idle_settings;
+mod principal;
+mod registration_info;
+mod task_definition;
+mod task_folder;
 mod task_service;
-// mod task_settings;
-// mod trigger_collection;
+mod task_settings;
+mod trigger_collection;
 
 /// Re-exported from chrono for convenience
 pub use chrono::DateTime;
@@ -41,6 +41,16 @@ pub use chrono::Utc;
 use com::Com;
 /// Wrapper over ITaskService class
 use task_service::TaskService;
+
+use crate::{
+    idle_settings::IdleSettings,
+    principal::{Principal, TaskLogon},
+    registration_info::RegistrationInfo,
+    task_definition::TaskDefinition,
+    task_folder::TaskFolder,
+    task_settings::TaskSettings,
+    trigger_collection::{TaskTriggerType, TriggerCollection},
+};
 
 /// Turns a string into a windows string
 fn to_win_str(string: &str) -> Vec<u16> {
@@ -54,79 +64,68 @@ fn to_win_str(string: &str) -> Vec<u16> {
 // }
 
 // impl Task {
+
+/// Use this function to schedule a task
+/// For now the task will only be to start an executable
+/// If the start time is not after the time this function is called
+/// or the end time is before the start time then this function will fail
+/// The task name can be anything you want, but it cannot start with a "."
+
 pub fn execute(task_path: PathBuf, task_name: &str) {
     let _com = Com::initialize().unwrap();
 
     let task_service = TaskService::new();
+    // task_service.0.Connect(None, None, None, None).unwrap();
+    task_service.connect().unwrap();
+
+    // task_service.0.GetFolder(to_win_str("\\").as_mut_ptr())
+    // let mut task_folder: *mut ITaskFolder = std::ptr::null_mut();
+    let task_folder = TaskFolder::new(task_service.get_folder().unwrap());
+
+    // delete tasks if it exists
+    // let mut err = task_folder.DeleteTask(BSTR::try_from(task_name).unwrap(), 0);
+    // println!("{}", err.message());
+    task_folder.delete_task(task_name);
+
+    let task = TaskDefinition::new(task_service.new_task().unwrap());
+
+    let registration_info = RegistrationInfo::new(task.get_registration_info().unwrap());
+    registration_info.put_author("Author").unwrap();
+
+    let principal = Principal::new(task.get_principal().unwrap());
+
+    principal
+        .put_logon_type(TaskLogon::InteractiveToken)
+        .unwrap();
+
+    let task_settings = TaskSettings::new(task.get_settings().unwrap());
+
+    const VARIANT_TRUE: i16 = -1;
+    task_settings
+        .put_start_when_available(VARIANT_TRUE)
+        .unwrap();
+
+    let idle_settings = IdleSettings::new(task_settings.get_idle_settings().unwrap());
+
+    idle_settings
+        .put_wait_timeout(Duration::seconds(5))
+        .unwrap();
+
+    let trigger_collection = TriggerCollection::new(task.get_triggers().unwrap());
+
+    // let trigger = trigger_collection.create(TaskTriggerType::SpecificTime())
+    let trigger = trigger_collection
+        .create(TASK_TRIGGER_TYPE2::TASK_TRIGGER_TIME)
+        .unwrap();
+
+    let time_trigger = trigger.cast::<ITimeTrigger>().unwrap();
+    // for trigger in time_triggers {
+    //     let trigger_collection = TriggerCollection::new(&task_definition)?;
+    //     let trigger = trigger_collection.create(TaskTriggerType::SpecificTime(trigger))?;
+    // }
     unsafe {
-        task_service.0.Connect(None, None, None, None).unwrap();
-
-        // task_service.0.GetFolder(to_win_str("\\").as_mut_ptr())
-        // let mut task_folder: *mut ITaskFolder = std::ptr::null_mut();
-        let mut task_folder = None;
-        task_service
-            .0
-            .GetFolder(
-                BSTR::try_from("\\".to_string()).unwrap(),
-                // &None as *mut Option<ITaskFolder>,
-                &mut task_folder,
-            )
-            .unwrap();
-        let task_folder = task_folder.unwrap();
-
-        // delete tasks if it exists
-        let mut err = task_folder.DeleteTask(BSTR::try_from(task_name).unwrap(), 0);
-        println!("{}", err.message());
-
-        let mut task_definition = None;
-        task_service.0.NewTask(0, &mut task_definition).unwrap();
-        let task_definition = task_definition.unwrap();
-
-        let mut registration_info = None;
-        task_definition
-            .get_RegistrationInfo(&mut registration_info)
-            .unwrap();
-        let registration_info = registration_info.unwrap();
-        registration_info.put_Author(BSTR::from("Author")).unwrap();
-
-        let mut principal = None;
-        task_definition.get_Principal(&mut principal).unwrap();
-        let principal = principal.unwrap();
-
-        principal
-            .put_LogonType(TASK_LOGON_TYPE::TASK_LOGON_INTERACTIVE_TOKEN)
-            .unwrap();
-
-        let mut task_settings = None;
-        task_definition.get_Settings(&mut task_settings).unwrap();
-        let task_settings = task_settings.unwrap();
-
-        const VARIANT_TRUE: i16 = -1;
-        task_settings.put_StartWhenAvailable(VARIANT_TRUE).unwrap();
-
-        let mut idle_settings = None;
-        task_settings.get_IdleSettings(&mut idle_settings).unwrap();
-        let idle_settings = idle_settings.unwrap();
-
-        idle_settings.put_WaitTimeout(BSTR::from("PT5M")).unwrap();
-
-        let mut trigger_collection = None;
-        task_definition.get_Triggers(&mut trigger_collection);
-        let trigger_collection = trigger_collection.unwrap();
-
-        let mut trigger = None;
-        trigger_collection
-            .Create(TASK_TRIGGER_TYPE2::TASK_TRIGGER_TIME, &mut trigger)
-            .unwrap();
-        let trigger = trigger.unwrap();
-
-        let time_trigger = trigger.cast::<ITimeTrigger>().unwrap();
-        // for trigger in time_triggers {
-        //     let trigger_collection = TriggerCollection::new(&task_definition)?;
-        //     let trigger = trigger_collection.create(TaskTriggerType::SpecificTime(trigger))?;
-        // }
         time_trigger.put_Id(BSTR::from("Trigger1")).unwrap();
-        let start = Utc::now() + chrono::Duration::seconds(10);
+        let start = Utc::now() + chrono::Duration::seconds(2);
         let end = Utc::now() + chrono::Duration::seconds(60);
         time_trigger
             .put_EndBoundary(BSTR::from(end.to_rfc3339()))
@@ -136,7 +135,7 @@ pub fn execute(task_path: PathBuf, task_name: &str) {
             .unwrap();
 
         let mut action_collection = None;
-        task_definition.get_Actions(&mut action_collection).unwrap();
+        task.0.get_Actions(&mut action_collection).unwrap();
         let action_collection = action_collection.unwrap();
 
         let mut action = None;
@@ -150,180 +149,11 @@ pub fn execute(task_path: PathBuf, task_name: &str) {
             .put_Path(BSTR::from(task_path.to_str().unwrap()))
             .unwrap();
 
-        let mut registered_task = None;
-        let err = task_folder.RegisterTaskDefinition(
-            BSTR::from(task_name),
-            task_definition.clone(),
-            TASK_CREATION::TASK_CREATE_OR_UPDATE.0,
-            None,
-            None,
-            TASK_LOGON_TYPE::TASK_LOGON_INTERACTIVE_TOKEN,
-            None,
-            &mut registered_task,
-        );
-        println!("{}", err.message());
+        task_folder.register_task(task_name, task.0).unwrap();
     }
 
     // path for notepad program
     // let mut exe_path = to_win_str(actions.0[0].to_str().unwrap());
-}
-
-/// Use this function to schedule a task
-/// For now the task will only be to start an executable
-/// If the start time is not after the time this function is called
-/// or the end time is before the start time then this function will fail
-/// The task name can be anything you want, but it cannot start with a "."
-pub fn execute_task(
-    actions: Actions,
-    task_name: String,
-    triggers: TaskTriggers,
-) -> Result<(), TaskError> {
-    dbg!(&actions.0[0], &task_name);
-    // validate that the task_path is not a folder and so on
-    // validate that the end time is after the start times
-
-    let _com = Com::initialize()?;
-
-    // path for notepad program
-    let mut exe_path = to_win_str(actions.0[0].to_str().unwrap());
-
-    // Create an instance of the task service
-    // let task_service = TaskService::new()?;
-
-    // Get the root task folder. This folder will hold the
-    // new task that is registered
-    // let root_task_folder = task_service.get_folder()?;
-
-    // // if the same task exists, remove it
-    // // root_task_folder.delete_task(&task_name).unwrap();
-
-    // // Create the task definition object to create the task
-    // let mut task_definition = task_service.new_task()?;
-
-    // // Get the registration info for setting the identification
-    // // and put the author
-    // let registration_info = task_definition.get_registration_info();
-    // registration_info.put_author("author name");
-
-    // // Create the principal for the task - these credentials are
-    // // overwritten with the credentials passed to RegisterTaskDefinition
-    // let principal = task_definition.get_principal();
-    // principal.put_logon_type(TaskLogon::InteractiveToken);
-
-    // // create the settings for the task
-    // let settings = task_definition.get_settings();
-    // settings.put_start_when_available(VARIANT_TRUE);
-
-    // // set the idle settings for the task
-    // let idle_settings = settings.get_idle_settings()?;
-    // idle_settings.put_wait_timeout(Duration::minutes(5));
-
-    // let trigger_collection = task_definition.get_triggers()?;
-    // // let trigger_collection = TriggerCollection::new(&task_definition).unwrap();
-    // // let trigger = trigger_collection
-    // //     .create(TaskTriggerType::TaskTriggerTime)
-    // //     .unwrap();
-
-    // unsafe {
-    //     // sets the daily triggers
-    //     if let Some(daily_triggers) = triggers.daily {
-    //         for daily_trigger in daily_triggers {
-    //             let trigger_collection = TriggerCollection::new(&task_definition)?;
-    //             let trigger = trigger_collection.create(TaskTriggerType::Daily(daily_trigger))?;
-    //         }
-    //     }
-
-    //     // sets triggers that happen at specific times
-    //     if let Some(time_triggers) = triggers.time {
-    //         for trigger in time_triggers {
-    //             let trigger_collection = TriggerCollection::new(&task_definition)?;
-    //             let trigger = trigger_collection.create(TaskTriggerType::SpecificTime(trigger))?;
-    //         }
-    //     }
-
-    //     // Add an action to the task. This task will execute notepad.exe
-    //     let mut action_collection: *mut IActionCollection = ptr::null_mut();
-    //     let mut hr = task_definition
-    //         .task
-    //         .get_Actions(&mut action_collection as *mut *mut IActionCollection);
-    //     if FAILED(hr) {
-    //         println!("Cannot get Task collection pointer: {:X}", hr);
-    //         // root_task_folder.Release();
-    //         // task.Release();
-    //         // return;
-    //     }
-    //     let action_collection = &mut *action_collection;
-
-    //     // create the action, specifying that it is an executable
-    //     let mut action: *mut IAction = ptr::null_mut();
-    //     action_collection.Create(TASK_ACTION_EXEC, &mut action as *mut *mut IAction);
-    //     action_collection.Release();
-    //     if FAILED(hr) {
-    //         println!("Cannot create the action: {:X}", hr);
-    //         return Err(TaskError::from(WinError::UnknownError(format!(
-    //             "Cannot create the action: {:X}",
-    //             hr
-    //         ))));
-    //     }
-    //     let action = &mut *action;
-
-    //     let mut exec_action: *mut IExecAction = ptr::null_mut();
-    //     // Query Interface for the executable task pointer
-    //     hr = action.QueryInterface(
-    //         Box::into_raw(Box::new(IExecAction::uuidof())),
-    //         &mut exec_action as *mut *mut IExecAction as *mut *mut c_void,
-    //     );
-    //     if FAILED(hr) {
-    //         println!("Cannot get IExecAction interface: {:X}", hr);
-    //         return Err(TaskError::from(WinError::UnknownError(format!(
-    //             "Cannot get IExecAction interface: {:X}",
-    //             hr
-    //         ))));
-    //     }
-    //     let exec_action = &mut *exec_action;
-
-    //     // Set the path of the executable to notepad.exe
-    //     hr = exec_action.put_Path(exe_path.as_mut_ptr());
-    //     exec_action.Release();
-    //     if FAILED(hr) {
-    //         println!("Cannot put action path: {:X}", hr);
-    //         return Err(TaskError::from(WinError::UnknownError(format!(
-    //             "Cannot put action path: {:X}",
-    //             hr
-    //         ))));
-    //     }
-
-    //     // Save the task in the root folder
-    //     let variant = Default::default();
-    //     let mut registered_task: *mut IRegisteredTask = ptr::null_mut();
-    //     hr = root_task_folder.task_folder.RegisterTaskDefinition(
-    //         to_win_str(&task_name).as_mut_ptr(),
-    //         // &mut task.task as *const ITaskDefinition,
-    //         task_definition.as_ptr(),
-    //         TASK_CREATE_OR_UPDATE as i32,
-    //         variant,
-    //         variant,
-    //         TASK_LOGON_INTERACTIVE_TOKEN,
-    //         // this was supposed to be _variant_t(L"") in C++
-    //         variant,
-    //         registered_task as *mut *mut IRegisteredTask,
-    //     );
-    //     if FAILED(hr) {
-    //         println!("Error saving the Task: {:X}", hr);
-    //         // root_task_folder.Release();
-    //         // task.Release();
-    //         // return;
-    //     }
-
-    //     println!("Success! Task successfully registered");
-
-    //     // Clean up
-    //     // root_task_folder.Release();
-    //     // task.Release();
-    //     registered_task.as_mut().unwrap().Release();
-    // }
-
-    Ok(())
 }
 
 #[derive(Debug)]

@@ -1,62 +1,28 @@
 use std::{ptr, unreachable};
 
+use bindings::Windows::Win32::TaskScheduler::IPrincipal;
 use log::error;
-use winapi::{
-    shared::winerror::FAILED,
-    um::taskschd::{IPrincipal, TASK_LOGON_INTERACTIVE_TOKEN},
-};
-
-use crate::task::TaskDefinition;
 
 /// Provides the security credentials for a principal. These security credentials define the security context for the tasks that are associated with the principal.
 ///
 /// https://docs.microsoft.com/en-us/windows/win32/api/taskschd/nf-taskschd-itaskdefinition-get_principal
-pub(crate) struct Principal<'a> {
-    principal: &'a mut IPrincipal,
-}
+pub(crate) struct Principal(pub(crate) IPrincipal);
 
-impl<'a> Principal<'a> {
+impl Principal {
     /// Gets the principal for the task that provides the security credentials for the task.
-    pub(crate) fn new(task: &TaskDefinition) -> Self {
-        unsafe {
-            // Create the principal for the task - these credentials are
-            // overwritten with the credentials passed to RegisterTaskDefinitio1n
-            let mut principal: *mut IPrincipal = ptr::null_mut();
-            let mut hr = task
-                .task
-                .get_Principal(&mut principal as *mut *mut IPrincipal);
-            // this should not fail, docs claim not return value
-            if FAILED(hr) {
-                error!("Cannot get principal pointer: {:X}", hr);
-                unreachable!();
-            }
-            Self {
-                principal: &mut *principal,
-            }
-        }
+    pub(crate) fn new(principal: IPrincipal) -> Self {
+        Self(principal)
     }
 
     /// Gets or sets the security logon method that is required to run the tasks that are associated with the principal.
     /// This property is read/write.
     ///
     /// https://docs.microsoft.com/en-us/windows/win32/api/taskschd/nf-taskschd-iprincipal-put_logontype
-    pub(crate) fn put_logon_type(&self, task_logon_kind: TaskLogon) {
+    pub(crate) fn put_logon_type(&self, task_logon_kind: TaskLogon) -> Result<(), windows::Error> {
         unsafe {
             // set up principal logon type to interactive logon
             // let hr = self.principal.put_LogonType(TASK_LOGON_INTERACTIVE_TOKEN);
-            let hr = self.principal.put_LogonType(task_logon_kind as u32);
-            if FAILED(hr) {
-                println!("Cannot put principal info: {:X}", hr);
-                return;
-            }
-        }
-    }
-}
-
-impl<'a> Drop for Principal<'a> {
-    fn drop(&mut self) {
-        unsafe {
-            self.principal.Release();
+            self.0.put_LogonType((task_logon_kind as i32).into()).ok()
         }
     }
 }
@@ -65,7 +31,7 @@ impl<'a> Drop for Principal<'a> {
 ///
 /// https://docs.microsoft.com/en-us/windows/win32/api/taskschd/ne-taskschd-task_logon_type
 #[derive(Debug)]
-#[repr(u32)]
+#[repr(i32)]
 pub(crate) enum TaskLogon {
     /// The logon method is not specified. Used for non-NT credentials.
     None = 0,

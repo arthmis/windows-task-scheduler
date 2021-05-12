@@ -1,6 +1,9 @@
-use std::ptr;
+use std::{convert::TryFrom, ptr};
 
-use bindings::Windows::Win32::TaskScheduler;
+use bindings::Windows::Win32::{
+    Automation::BSTR,
+    TaskScheduler::{self, ITaskDefinition, ITaskFolder},
+};
 use bindings::Windows::Win32::{
     Com::{self, CoCreateInstance},
     TaskScheduler::ITaskService,
@@ -32,6 +35,39 @@ impl TaskService {
             )
             .unwrap();
             Self(task_service)
+        }
+    }
+
+    pub(crate) fn connect(&self) -> Result<(), windows::Error> {
+        unsafe { self.0.Connect(None, None, None, None).ok() }
+    }
+
+    pub(crate) fn get_folder(&self) -> Result<ITaskFolder, windows::Error> {
+        let mut task_folder = None;
+        unsafe {
+            let err = self
+                .0
+                .GetFolder(
+                    BSTR::try_from("\\".to_string()).unwrap(),
+                    // &None as *mut Option<ITaskFolder>,
+                    &mut task_folder,
+                )
+                .ok();
+            match err {
+                Ok(_) => Ok(task_folder.unwrap()),
+                Err(error) => Err(error),
+            }
+        }
+        // let task_folder = task_folder.unwrap();
+    }
+    pub(crate) fn new_task(&self) -> Result<ITaskDefinition, windows::Error> {
+        let mut task_definition = None;
+        unsafe {
+            let res = self.0.NewTask(0, &mut task_definition).ok();
+            match res {
+                Ok(_) => Ok(task_definition.unwrap()),
+                Err(error) => Err(error),
+            }
         }
     }
 }
