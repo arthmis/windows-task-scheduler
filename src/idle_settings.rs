@@ -1,8 +1,9 @@
 use std::ptr;
 
+use bindings::Windows::Win32::TaskScheduler::IIdleSettings;
 use chrono::Duration;
 use log::error;
-use winapi::{shared::winerror::FAILED, um::taskschd::IIdleSettings};
+// use winapi::{shared::winerror::FAILED, um::taskschd::IIdleSettings};
 
 use crate::{error::WinError, task_settings::TaskSettings, to_win_str};
 
@@ -23,7 +24,7 @@ impl<'a> IdleSettings<'a> {
             let mut hr = settings
                 .settings
                 .get_IdleSettings(&mut idle_settings as *mut *mut IIdleSettings);
-            if FAILED(hr) {
+            if hr.is_err() {
                 error!("Cannot get idle settings information: {:X}", hr);
                 return Err(WinError::UnknownError(format!(
                     "Cannot get idle settings information: {:X}",
